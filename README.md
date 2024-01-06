@@ -2,9 +2,6 @@
 
 **Effortlessly Capture and Organize Your Thoughts**
 
-[![Build Status](https://travis-ci.com/Kartik-A-Pati/NoteFreze.svg?branch=master)](https://travis-ci.com/Kartik-A-Patil/NoteFreze)
-[![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/Kartik-A-Patil/NoteFreze/blob/main/LICENSE)
-
 ## Overview
 
 NoteFreze is a thoughtfully crafted open-source application designed to empower you to quickly capture, organize, and share your notes with ease. Built with simplicity and efficiency in mind, it seamlessly integrates into your workflow, allowing you to focus on what matters most: your ideas.
