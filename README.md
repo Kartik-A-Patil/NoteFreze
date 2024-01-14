@@ -34,7 +34,7 @@ To build and run NoteFreze locally, follow these steps:
 6. For Android:
     - Press 'A' in the terminal to start the Metro Bundler for Android.
 
-7. For iOS: == You need a Mac device for this ==
+7. For iOS: ``` You need a Mac device for this ```
     - Press 'I' in the terminal to start the Metro Bundler for iPhone.
 
 ## Contributing
