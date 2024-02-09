@@ -1,7 +1,8 @@
 # NoteFreze
 
 **Effortlessly Capture and Organize Your Thoughts**
-
+##Preview 
+Try out preview from Google play store [try](https://play.google.com/store/apps/details?id=com.notefreze).
 ## Overview
 
 NoteFreze is a thoughtfully crafted open-source application designed to empower you to quickly capture, organize, and share your notes with ease. Built with simplicity and efficiency in mind, it seamlessly integrates into your workflow, allowing you to focus on what matters most: your ideas.
