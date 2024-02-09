@@ -2,7 +2,7 @@
 
 **Effortlessly Capture and Organize Your Thoughts**
 
-##Preview 
+## Preview 
 
 Try out preview from Google play store [try](https://play.google.com/store/apps/details?id=com.notefreze).
 
