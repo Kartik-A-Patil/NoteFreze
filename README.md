@@ -4,7 +4,7 @@
 
 ## Preview 
 
-Try out preview from Google play store [try](https://play.google.com/store/apps/details?id=com.notefreze).
+[Try_out](https://play.google.com/store/apps/details?id=com.notefreze) preview from Google play store.
 
 ## Overview
 
