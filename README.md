@@ -8,7 +8,7 @@
 
 ## Overview
 
-NoteFreze is a thoughtfully crafted open-source application designed to empower you to quickly capture, organize, and share your notes with ease. Built with simplicity and efficiency in mind, it seamlessly integrates into your workflow, allowing you to focus on what matters most: your ideas.
+NoteFreze is a thoughtfully crafted open-source application designed to empower you to quickly capture, organize. Built with simplicity and efficiency in mind, it seamlessly integrates into your workflow, allowing you to focus on what matters most: your ideas.
 
 ## Build Commands
 
