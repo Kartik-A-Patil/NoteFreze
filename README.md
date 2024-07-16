@@ -12,7 +12,7 @@ NoteFreze is a thoughtfully crafted open-source application designed to empower 
 
 ## Build Commands
 
-To build and run NoteFreze locally, follow these steps:
+To build and run NoteFreze locally in Debugging Mode, follow these steps:
 
 1. Clone the repository:
     ```bash
