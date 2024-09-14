@@ -1,50 +1,70 @@
-# Welcome to your Expo app 👋
+# NoteFreze
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+**NoteFreze** is a minimalist, open-source notes app inspired by the sleek **Nothing UI** design. It's built to help users take notes in a distraction-free environment while offering encryption for security and offline storage.
 
-## Get started
+## Features
 
-1. Install dependencies
+- 🔒 **Encrypted Notes**: All notes are encrypted to ensure privacy and security.
+- 💾 **Offline Storage**: Access and edit your notes without needing an internet connection.
+- 🖤 **Minimalist UI**: A clean and clutter-free interface inspired by the Nothing UI.
+- 🌐 **Open Source**: Customize, contribute, or explore the code!
 
+## Coming Soon
+
+- **Play Store Release**: NoteFreze will soon be available on the Play Store for easy installation.
+- **Screenshots**: Stay tuned for app screenshots in future updates!
+
+## Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/Kartik-A-Patil/NoteFreze.git
+   ```
+2. Navigate to the project directory:
+   ```bash
+   cd notefreze
+   ```
+3. Install dependencies:
    ```bash
    npm install
    ```
-
-2. Start the app
-
+4. Run the app:
    ```bash
-    npx expo start
+   npm start
    ```
 
-In the output, you'll find options to open the app in a
+## Usage
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+1. Launch the app after installation.
+2. Create a new note by clicking the "+" button.
+3. Type your note content in the distraction-free editor.
+4. Your notes are automatically saved and encrypted.
+5. Access your notes offline anytime.
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## Contributing
 
-## Get a fresh project
+We welcome contributions to NoteFreze! Here's how you can help:
 
-When you're ready, run:
+1. Fork the repository.
+2. Create a new branch: `git checkout -b feature/your-feature-name`
+3. Make your changes and commit them: `git commit -m 'Add some feature'`
+4. Push to the branch: `git push origin feature/your-feature-name`
+5. Submit a pull request.
 
-```bash
-npm run reset-project
-```
+## License
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Learn more
+## Contact
 
-To learn more about developing your project with Expo, look at the following resources:
+If you have any questions or suggestions, please open an issue or contact the maintainer at:
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+- Email: kartikpatil8180@gmail.com
+- Twitter: [@Kartikpatil](https://x.com/Kartikpatil_)
 
-## Join the community
+## Acknowledgments
 
-Join our community of developers creating universal apps.
+- Inspired by the Nothing UI design
+---
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Made with ❄️ by [Kartik Patil]
