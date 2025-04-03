@@ -1,16 +1,15 @@
 import React, { useEffect, useState, useRef, useContext } from 'react';
-import { View, Text, StyleSheet, Dimensions, ScrollView, TouchableOpacity, Alert, ActivityIndicator, RefreshControl, RefreshControlBase } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
-import { RichEditor } from 'react-native-pell-rich-editor';
-import { ThemedText } from '@/components/ThemedText';
-import { Searchbar, IconButton, Tooltip } from 'react-native-paper';
+import { Searchbar, IconButton, Dialog, Portal, Button } from 'react-native-paper';
 import Context from '@/context/createContext';
-import { moveMultipleToBin, deleteMultipleNotes, initDatabase } from '@/utils/db'; // Import the function
-import { Button, Dialog, Portal } from 'react-native-paper';
-
-const { width: screenWidth } = Dimensions.get('window');
-const NoteWidth = screenWidth / 2 - 15;
-const RICH_EDITOR_MAX_HEIGHT = 200;
+import { moveMultipleToBin, deleteMultipleNotes, initDatabase, getAllTags } from '@/utils/db';
+import { cancelPushNotification } from '@/components/Notification';
+import NoteSkeleton from '@/components/NoteSkeleton';
+import NotesGrid from '@/components/home/NotesGrid';
+import SelectionHeader from '@/components/home/SelectionHeader';
+import EmptyState from '@/components/home/EmptyState';
+import TagList from '@/components/tags/TagList';
 
 interface Note {
   id: number;
@@ -18,66 +17,108 @@ interface Note {
   content: string;
   isInBin: number;
   reminder?: number | null;
+  isLocked?: number;
+  tags?: Array<{name: string, color: string}>;
 }
 
 export default function Index() {
   const context = useContext(Context);
-  const { fetchNotes, notes, loading, setLoading,onToggleSnackBar } = context;
+  const { fetchNotes, notes, loading, setLoading, removeNoteFromState } = context;
   const [dialogVisible, setDialogVisible] = useState(false);
 
   const [filteredNotes, setFilteredNotes] = useState<Note[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedNotes, setSelectedNotes] = useState<Set<number>>(new Set());
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const router = useRouter();
-  const richText = useRef<RichEditor>(null);
+  const selectionAnimation = useRef(new Animated.Value(0)).current;
 
-  // Fetch notes on initial load
+  // Animate the selection mode header
   useEffect(() => {
-    initDatabase();
-    const fetch = async () => {
-      setLoading(true);
-      await fetchNotes();
-    };
-    fetch();
-  }, [fetchNotes]);
+    Animated.timing(selectionAnimation, {
+      toValue: isSelectionMode ? 1 : 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [isSelectionMode]);
 
-  // Filter notes based on the search query
+  // Fetch notes on initial load only, not on every navigation
+  useEffect(() => {
+    const initialize = async () => {
+      await initDatabase();
+      if (notes.length === 0) {
+        setLoading(true);
+        await fetchNotes();
+      }
+    };
+    initialize();
+  }, []); // No dependencies to prevent re-runs on navigation
+
+  // Load all tags on initial render
+  useEffect(() => {
+    const loadTags = async () => {
+      const tags = await getAllTags();
+      setAllTags(tags);
+    };
+    loadTags();
+  }, [notes]);
+
+  // Filter notes based on the search query and selected tags
   useEffect(() => {
     const timeoutId = setTimeout(() => {
+      let filtered = [...notes];
+
+      // Apply search filter - only search in unlocked notes
       if (searchQuery) {
-        const filtered = notes.filter((note: any) =>
-          (note.title?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
-          (note.content?.toLowerCase() || '').includes(searchQuery.toLowerCase())
-        );
-        setFilteredNotes(filtered);
-      } else {
-        setFilteredNotes(notes);
+        filtered = filtered.filter((note: any) => {
+          // Don't search in locked notes
+          if (note.isLocked) return false;
+          
+          return (note.title?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+                 (note.content?.toLowerCase() || '').includes(searchQuery.toLowerCase());
+        });
       }
+
+      // Apply tag filter if any tags are selected
+      if (selectedTags.length > 0) {
+        filtered = filtered.filter((note: Note) => {
+          // If note is locked, filter it out when tags are selected
+          if (note.isLocked) return false;
+          
+          // If note has no tags, filter it out when tags are selected
+          if (!note.tags || note.tags.length === 0) return false;
+
+          // Check if note has at least one of the selected tags by comparing tag names
+          return selectedTags.some(selectedTag => 
+            note.tags!.some(noteTag => noteTag.name === selectedTag)
+          );
+        });
+      }
+
+      setFilteredNotes(filtered);
     }, 100);
 
     return () => clearTimeout(timeoutId);
-  }, [searchQuery, notes]);
-
-
-
+  }, [searchQuery, notes, selectedTags]);
 
   const toggleDialogSwitch = () => setDialogVisible(!dialogVisible);
 
-  // Handle note press (tap)
-  const handleNotePress = (id: number) => {
+  // Handle note press with selection mode logic
+  const handleNotePress = async (note: Note) => {
     if (isSelectionMode) {
       setSelectedNotes(prev => {
         const newSelection = new Set(prev);
-        if (newSelection.has(id)) {
-          newSelection.delete(id);
+        if (newSelection.has(note.id)) {
+          newSelection.delete(note.id);
         } else {
-          newSelection.add(id);
+          newSelection.add(note.id);
         }
         return newSelection;
       });
     } else {
-      router.push(`/note/${id}`);
+      router.push(`/note/${note.id}`);
     }
   };
 
@@ -90,31 +131,45 @@ export default function Index() {
   // Handle delete action
   const handleDeleteSelectedNotes = async () => {
     const noteIds = Array.from(selectedNotes);
-    await moveMultipleToBin(noteIds)
+    const notificationIds = await moveMultipleToBin(noteIds);
+    
+    if (Array.isArray(notificationIds)) {
+      for (const notificationId of notificationIds) {
+        await cancelPushNotification(notificationId);
+      }
+    }
+    
+    // Update state without fetching all notes
+    noteIds.forEach(id => removeNoteFromState(id));
+    
     setSelectedNotes(new Set());
     setIsSelectionMode(false);
-    await fetchNotes(); // Refresh notes after deletion
   };
 
-  // Handle archive action
+  // Handle delete permanently
   const handleDeleteNotePermanently = async () => {
     try {
       const noteIds = Array.from(selectedNotes);
-      await deleteMultipleNotes(noteIds);
-      // if (notificationId) {
-      //   await cancelPushNotification(notificationId);
-      // }
-      // router.navigate('/');
-      toggleDialogSwitch()
+      const notificationIds = await deleteMultipleNotes(noteIds);
+      
+      if (Array.isArray(notificationIds)) {
+        for (const notificationId of notificationIds) {
+          await cancelPushNotification(notificationId);
+        }
+      }
+      
+      // Update state without fetching all notes
+      noteIds.forEach(id => removeNoteFromState(id));
+      
+      toggleDialogSwitch();
+      setSelectedNotes(new Set());
+      setIsSelectionMode(false);
     } catch (error) {
       console.error('Error deleting note:', error);
-      Alert.alert('Error', 'Failed to delete note.');
     }
-    setSelectedNotes(new Set());
-    setIsSelectionMode(false);
   };
 
-  // Handle exiting selection mode
+  // Exit selection mode
   const handleExitSelectionMode = () => {
     setIsSelectionMode(false);
     setSelectedNotes(new Set());
@@ -127,220 +182,220 @@ export default function Index() {
     }
   }, [selectedNotes]);
 
-  // Render each note
-  const renderNote = (item: Note) => (
-    <TouchableOpacity
-      key={item.id}
-      style={[
-        styles.noteContainer,
-        selectedNotes.has(item.id) && styles.selectedNote
-      ]}
-      onPress={() => handleNotePress(item.id)}
-      onLongPress={() => handleLongPress(item.id)}
-    >
-
-      {item.title && (
-        <ThemedText style={styles.noteTitle}>{item.title}</ThemedText>
-      )}
-      {item.content ? (
-        <RichEditor
-          ref={richText}
-          style={styles.editor}
-          initialContentHTML={item.content}
-          editorStyle={{ backgroundColor: '#000', color: '#ccc' }}
-          disabled={true}
-          forceDarkOn
-        />
-      ) : (
-        <Text style={styles.noContentText}>No content available</Text>
-      )}
-    </TouchableOpacity>
-  );
-
-  // Split notes into two columns for layout
-  const splitNotes = () => {
-    const leftColumn: Note[] = [];
-    const rightColumn: Note[] = [];
-    filteredNotes.forEach((note, index) => {
-      if (index % 2 === 0) {
-        leftColumn.push(note);
+  // Add tag selection handler
+  const handleTagSelection = (tag: string) => {
+    setSelectedTags(prevTags => {
+      if (prevTags.includes(tag)) {
+        return prevTags.filter(t => t !== tag);
       } else {
-        rightColumn.push(note);
+        return [...prevTags, tag];
       }
     });
-    return { leftColumn, rightColumn };
   };
 
-  const { leftColumn, rightColumn } = splitNotes();
+  // Header animation transforms - Using standard interpolation
+  const headerTranslateY = selectionAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-80, 10], // Adjust this to position the header below the search bar
+  });
 
+  const searchBarTranslateY = selectionAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 0], // Keep search bar in place
+  });
+
+  const searchBarOpacity = selectionAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0.3], // Fade the search bar when selection mode is active
+  });
+
+  // Add refresh handler for tag list
+  const refreshTagsAndNotes = async () => {
+    setLoading(true);
+    try {
+      await fetchNotes();
+      const tags = await getAllTags();
+      setAllTags(tags);
+    } catch (error) {
+      console.error('Error refreshing tags and notes:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Use refreshTagsAndNotes instead of fetchNotes in places where we want to update both
   return (
     <View style={styles.container}>
-      {isSelectionMode ? (
-        <View style={styles.header}>
-          <Tooltip title="Move to Bin">
-            <IconButton
-              icon="delete-clock"
-              mode="contained"
-              onPress={handleDeleteSelectedNotes}
-              style={styles.headerButton}
-              containerColor="#111"
-              iconColor="#fff"
-              size={27}
-            />
-          </Tooltip>
-          <Tooltip title="Delete Permanently">
-
-            <IconButton
-              icon="delete-forever-outline"
-              mode="contained"
-              onPress={toggleDialogSwitch}
-              style={styles.headerButton}
-              containerColor="#111"
-              iconColor="#fff"
-              size={27}
-
-            />
-          </Tooltip>
-          <Tooltip title="close">
-            <IconButton
-              icon="window-close"
-              mode="contained"
-              onPress={handleExitSelectionMode}
-              style={styles.exitSelectionButton}
-              containerColor="#111"
-              iconColor="#fff"
-              size={27}
-            />
-          </Tooltip>
-        </View>
-      ) : (
+      {/* Modern search bar */}
+      <Animated.View 
+        style={[
+          styles.searchBarContainer, 
+          { 
+            transform: [{ translateY: searchBarTranslateY }],
+            opacity: searchBarOpacity
+          }
+        ]}
+      >
         <Searchbar
           onChangeText={setSearchQuery}
           style={styles.searchInput}
           placeholder="Search notes"
-          placeholderTextColor={'#777'}
+          placeholderTextColor="#777"
           value={searchQuery}
-          inputStyle={{ color: '#ccc'}}
-          iconColor='#fff'
+          inputStyle={{ color: '#ccc' }}
+          iconColor="#fff"
+        />
+      </Animated.View>
+      
+      {/* Tag list */}
+      {!isSelectionMode && allTags.length > 0 && (
+        <TagList 
+          tags={allTags}
+          selectedTags={selectedTags}
+          onTagPress={handleTagSelection}
         />
       )}
 
-      {filteredNotes.length === 0 ? (
-        <Text style={styles.noNotesText}>No notes found</Text>
+      {/* Selection mode header */}
+      <SelectionHeader 
+        count={selectedNotes.size}
+        onDelete={handleDeleteSelectedNotes}
+        onPermanentDelete={toggleDialogSwitch}
+        onCancel={handleExitSelectionMode}
+        style={{ 
+          transform: [{ translateY: headerTranslateY }],
+          opacity: selectionAnimation,
+        }}
+      />
+
+      {/* Notes grid or empty state */}
+      {filteredNotes.length === 0 && !loading ? (
+        <EmptyState searchQuery={searchQuery} />
+      ) : loading ? (
+        <NoteSkeleton count={6} />
       ) : (
-        !loading ?
-          <ScrollView
-            contentContainerStyle={styles.notesContainer}
-            refreshControl={
-              <RefreshControl refreshing={loading} onRefresh={fetchNotes} />
-            }
-          >
-            <View style={styles.column}>
-              {leftColumn.map((note: Note) => renderNote(note))}
-            </View>
-            <View style={styles.column}>
-              {rightColumn.map((note: Note) => renderNote(note))}
-            </View>
-          </ScrollView>
-          :
-          <ActivityIndicator size="large" color="#fff" style={{ marginTop: 25 }} />
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl refreshing={loading} onRefresh={refreshTagsAndNotes} />
+          }
+        >
+          <NotesGrid 
+            notes={filteredNotes}
+            selectedNotes={selectedNotes}
+            isSelectionMode={isSelectionMode}
+            onNotePress={handleNotePress}
+            onNoteLongPress={handleLongPress}
+          />
+        </ScrollView>
       )}
+
+      {/* Add new note button */}
       {!isSelectionMode && (
         <IconButton
           icon="plus"
           mode="contained"
-          onPress={() => 
-            router.push('/note/new')
-            // onToggleSnackBar()
-          }
-          style={styles.btn}
+          onPress={() => router.push('/note/new')}
+          style={styles.addButton}
           containerColor="#ededed"
           iconColor="#000"
           size={30}
         />
       )}
+
+      {/* Delete confirmation dialog */}
       <Portal>
-        <Dialog visible={dialogVisible} onDismiss={toggleDialogSwitch} style={{borderColor:'#ccc',borderWidth:0.4, backgroundColor: '#222'}}>
-          <Dialog.Icon icon="alert" />
-          <Dialog.Title style={{ fontSize: 18 }}>Do you want to delete this note permanently?</Dialog.Title>
+        <Dialog 
+          visible={dialogVisible} 
+          onDismiss={toggleDialogSwitch} 
+          style={styles.dialog}
+        >
+          <Dialog.Icon icon="alert" color="#f44336" />
+          <Dialog.Title style={styles.dialogTitle}>
+            Delete permanently?
+          </Dialog.Title>
+          <Dialog.Content>
+            <Text style={styles.dialogContent}>
+              This action cannot be undone. These notes will be permanently deleted.
+            </Text>
+          </Dialog.Content>
           <Dialog.Actions>
-            <Button onPress={toggleDialogSwitch}>Cancel</Button>
-            <Button onPress={handleDeleteNotePermanently}>Delete</Button>
+            <Button textColor="#999" onPress={toggleDialogSwitch}>Cancel</Button>
+            <Button textColor="#fff" onPress={handleDeleteNotePermanently}>Delete</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>
     </View>
   );
 }
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 5, backgroundColor: '#000' },
-  searchInput: {
-    backgroundColor: '#000',
-    borderColor: '#fff',
-    borderBottomWidth: 0.4,
-    borderRadius: 50,
-    marginBottom: 20,
-    marginTop: 8,
-    width: '100%',
-    alignSelf: 'center',
-    justifyContent: 'center',
-  },
-  notesContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  column: {
-    flex: 1,
-    paddingHorizontal: 4,
-  },
-  noteContainer: {
-    padding: 10,
-    marginVertical: 5,
-    borderColor: '#777',
-    borderWidth: 0.4,
-    borderRadius: 10,
-    width: NoteWidth,
-    maxHeight: 250,
-    overflow: 'hidden',
-    backgroundColor: '#000',
-  },
-  noteTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff', marginLeft: 5, userSelect: 'none' },
-  editor: { marginVertical: 2, maxHeight: RICH_EDITOR_MAX_HEIGHT, overflow: 'hidden', userSelect: 'none' },
-  noNotesText: { textAlign: 'center', fontSize: 18, color: '#aaa', marginTop: 20 },
-  noContentText: { fontSize: 14, color: '#ccc', marginTop: 10, textAlign: 'center' },
-  btn: { height: 80, width: 80, borderRadius: 50, position: 'absolute', bottom: 25, right: 20 },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    padding: 10,
-    backgroundColor: '#111',
-    marginBottom: 11,
-    borderRadius: 50
-  },
-  headerButton: {
-    margin: 5,
 
-  },
-  exitSelectionButton: {
-    margin: 5,
-  },
-  checkbox: {
-    fontSize: 24,
-    marginRight: 10,
-  },
-  selectedNote: {
-    borderColor: "#fff",
-    borderWidth: 1
-  },
-  NotesSkeleton: {
-    width: '90%',
+const styles = StyleSheet.create({
+  container: {
     flex: 1,
-    flexDirection: 'row',
-    flexWrap: 'wrap'
+    backgroundColor: '#000',
+    position: 'relative',
   },
-  skeleton: {
-    backgroundColor: '#fff',
-    width: NoteWidth,
-    height: 100,
-  }
+  searchBarContainer: {
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 5,
+    position: 'relative',
+    zIndex: 5, // Lower than selection header
+  },
+  searchInput: {
+    backgroundColor: '#111',
+    borderRadius: 12,
+    elevation: 0,
+    height: 50,
+    fontSize: 16,
+  },
+  scrollContent: {
+    paddingBottom: 80,
+  },
+  addButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    elevation: 5,
+  },
+  dialog: {
+    backgroundColor: '#171717',
+    borderRadius: 12,
+    borderColor: '#333',
+    borderWidth: 1,
+  },
+  dialogTitle: {
+    color: '#fff',
+    fontFamily: 'RobotoMono',
+    fontSize: 18,
+  },
+  dialogContent: {
+    color: '#aaa',
+    fontFamily: 'PTMono',
+    fontSize: 14,
+  },
+  selectionHeaderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    backgroundColor: 'rgba(18, 18, 18, 0.8)',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+  },
+  dialogActionBtn: {
+    color: '#fff',
+  },
+  dialogCancelBtn: {
+    color: '#999',
+  },
 });

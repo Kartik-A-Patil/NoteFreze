@@ -7,14 +7,15 @@ import 'react-native-reanimated';
 import { PaperProvider, Snackbar } from 'react-native-paper';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { MenuProvider } from 'react-native-popup-menu';
-import { TouchableOpacity, Text, View, Platform, StyleSheet, SafeAreaView } from 'react-native';
+import { TouchableOpacity, Text, View, Platform, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import ContextProvider from '@/context/mainContext';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { authenticateUser } from '@/utils/auth'; // Import the authenticateUser function
-import * as SecureStore from 'expo-secure-store';
+import {StatusBar} from 'expo-status-bar';
 import Context from '@/context/createContext';
+
+// Configure the notification handler at the top level - before any component code
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -23,12 +24,28 @@ Notifications.setNotificationHandler({
   }),
 });
 
+// Additional setup for Android channels
+if (Platform.OS === 'android') {
+  Notifications.setNotificationChannelAsync('default', {
+    name: 'Default',
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#FF231F7C',
+  });
+  
+  Notifications.setNotificationChannelAsync('reminders', {
+    name: 'Reminders',
+    importance: Notifications.AndroidImportance.HIGH, 
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#FF231F7C',
+  });
+}
+
 export default function RootLayout() {
   const [expoPushToken, setExpoPushToken] = useState<string>('');
   const [notification, setNotification] = useState<Notifications.Notification | undefined>(undefined);
   const notificationListener = useRef<Notifications.Subscription>();
   const responseListener = useRef<Notifications.Subscription>();
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null); // Initial state is null for proper loading check
 
   const [loaded] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
@@ -40,36 +57,6 @@ export default function RootLayout() {
     RobotoMono: require('../assets/fonts/RobotoMono.ttf'),
   });
 
-  // Biometric Authentication
-  const performAuthentication = async () => {
-    try {
-      const authResult = await authenticateUser();
-      setIsAuthenticated(authResult);
-    } catch (error) {
-      console.error('Authentication failed:', error);
-      setIsAuthenticated(false);
-    }
-  };
-
-
-
-  useEffect(() => {
-    const loadAuthEnabled = async () => {
-      try {
-        const storedValue = await SecureStore.getItemAsync('authEnabled');
-        const isAuthEnabled = storedValue === 'true'; // Ensure value is a boolean
-        setIsAuthenticated(!isAuthEnabled);
-        if (isAuthEnabled) {
-          await performAuthentication(); // Await authentication
-        }
-      } catch (error) {
-        console.error('Error loading authEnabled:', error);
-        setIsAuthenticated(false); // Set to false in case of error
-      }
-    };
-
-    loadAuthEnabled();
-  }, []);
 
   useEffect(() => {
     if (loaded) {
@@ -102,19 +89,6 @@ export default function RootLayout() {
     return null; // Wait for fonts to load
   }
 
-  if (isAuthenticated === false) {
-    return (
-      <SafeAreaView style={styles.errorContainer}>
-        <Text style={styles.logo}>NoteFreze</Text>
-        <Text style={styles.Text}>Authenticate required to access Notes</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={performAuthentication}>
-          <Text style={styles.retryButtonText}>Try Again</Text>
-        </TouchableOpacity>
-      </SafeAreaView>
-    );
-  }
-
-  // If authentication is successful, render the app
   return (
     <ContextProvider>
       <MainLayout />
@@ -129,6 +103,7 @@ const MainLayout = () => {
     <ThemeProvider value={DarkTheme}>
       <PaperProvider>
         <MenuProvider>
+          <StatusBar style='light' />
           <Stack
             screenOptions={{
               headerStyle: {
@@ -146,7 +121,8 @@ const MainLayout = () => {
               name="index"
               options={{
                 headerTitle: 'NoteFreze',
-                headerTitleStyle: { fontSize: 22, fontFamily: 'Ndot' }
+                headerTitleStyle: { fontSize: 22, fontFamily: 'Ndot' },
+                headerBackVisible: false // Add this line to hide the back button
               }}
             />
             <Stack.Screen name="note/[noteId]" options={{ headerTitle: '' }} />

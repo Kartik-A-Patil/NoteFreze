@@ -2,7 +2,7 @@ import React, { useState, ReactNode, useCallback, useEffect } from 'react';
 import Context from '@/context/createContext';
 import { Alert } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
-import { saveNote, removeReminder, addReminder, loadNotes } from '@/utils/db';
+import { saveNote, removeReminder, addReminder, loadNotes, getNoteById } from '@/utils/db';
 import { router } from 'expo-router';
 
 interface ContextProviderProps {
@@ -74,38 +74,94 @@ const ContextProvider: React.FC<ContextProviderProps> = ({ children }) => {
         }
     }, []);
 
+    const updateNoteInState = useCallback((updatedNote: any) => {
+        setNotes(prevNotes => 
+            prevNotes.map(note => 
+                note.id === updatedNote.id ? updatedNote : note
+            )
+        );
+    }, []);
+    
+    const removeNoteFromState = useCallback((noteId: number) => {
+        setNotes(prevNotes => prevNotes.filter(note => note.id !== noteId));
+    }, []);
+    
+    const addNoteToState = useCallback((note: any) => {
+        setNotes(prevNotes => [note, ...prevNotes]);
+    }, []);
+
     const handleSaveNote = useCallback(
-        async (noteId: string | number | null, title: string | null, content: string | null, reminder: Date | null, notificationId: string | null) => {
-            if (!title && !content) {
-                fetchNotes();
-                router.navigate('/');
+        async (
+            noteId: string | number | null, 
+            title: string | null, 
+            content: string | null, 
+            reminder: Date | null, 
+            notificationId: string | null, 
+            isLocked: boolean = false, 
+            tagIds: number[] = []  // Changed from tags array to tagIds array
+        ) => {
+            // Skip if both title and content are empty
+            if (!title && (!content || content.trim() === '')) {
+                console.log("No content to save");
+                // Don't navigate here - let calling code handle navigation
                 return;
             }
 
             try {
+                console.log('Starting save operation for note ID:', noteId);
+                
                 const reminderTime = reminder?.getTime() || null;
-
+                
+                // Make sure we properly handle 'new' vs existing note to avoid duplication
+                const numericNoteId = noteId === 'new' ? null : 
+                                     (typeof noteId === 'string' ? Number(noteId) : noteId);
+                
+                // Save the note and get the ID using tag IDs directly
                 const savedNoteId = await saveNote(
-                    noteId === 'new' ? null : Number(noteId),
+                    numericNoteId,
                     title,
                     content,
                     reminderTime,
-                    notificationId
+                    notificationId,
+                    isLocked,
+                    tagIds
                 );
-                if (reminderTime) {
-                    await addReminder(savedNoteId, reminderTime);
-                } else if (savedNoteId) {
-                    await removeReminder(savedNoteId);
+                
+                console.log('Saved note ID:', savedNoteId);
+
+                // Handle reminders only if we have a valid note ID
+                if (typeof savedNoteId === 'number') {
+                    // Update UI state based on whether it's a new note or an existing one
+                    if (noteId === 'new') {
+                        // Load the freshly created note to get all fields
+                        const newNote = await getNoteById(savedNoteId);
+                        if (newNote) {
+                            addNoteToState(newNote);
+                        }
+                        
+                        // DON'T navigate here - let calling code handle navigation
+                        // This helps prevent navigation conflicts
+                    } else {
+                        // Update the existing note in state
+                        const updatedNote = await getNoteById(Number(noteId));
+                        if (updatedNote) {
+                            updateNoteInState(updatedNote);
+                        }
+                    }
+                    
+                    return true; // Success
                 }
-                router.navigate('/');
-                fetchNotes();
-                onToggleSnackBar({ SnackBarMsg: 'Note Saved' })
+                
+                return false; // Failed to save
             } catch (error) {
-                console.error('Error in handleSaveNote:', error);
-                Alert.alert('Error', `Failed to save note: ${error}`);
+                console.error('Error saving note:', error);
+                onToggleSnackBar({
+                    SnackBarMsg: 'Failed to save note'
+                });
+                return false;
             }
         },
-        [fetchNotes]
+        [addNoteToState, updateNoteInState, onToggleSnackBar]
     );
 
     return (
@@ -115,6 +171,9 @@ const ContextProvider: React.FC<ContextProviderProps> = ({ children }) => {
                 setIsAuthEnabled,
                 handleSaveNote,
                 fetchNotes,
+                updateNoteInState,
+                removeNoteFromState,
+                addNoteToState,
                 notes,
                 loading,
                 setLoading,

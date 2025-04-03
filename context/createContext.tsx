@@ -4,7 +4,15 @@ import React, { createContext, useState, ReactNode } from 'react';
 interface ContextType {
     isAuthEnabled: boolean;
     setIsAuthEnabled: React.Dispatch<React.SetStateAction<boolean>>;
-    handleSaveNote: (noteId: string | number | null, title: string, content: string, reminder: Date | null, router: any) => Promise<void>;
+    handleSaveNote: (
+        noteId: string | number | null, 
+        title: string, 
+        content: string, 
+        reminder: Date | null, 
+        notificationId: string | null, 
+        isLocked?: boolean, 
+        tags?: Array<{name: string, color: string}>
+    ) => Promise<void>;
     notes: any;
     fetchNotes: any;
     setRefreshing: any;

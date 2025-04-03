@@ -1,46 +1,44 @@
-import React, { useState, useEffect, useRef, useCallback,useContext } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Dimensions } from 'react-native';
-import { loadBinNotes, restoreMultipleFromBin, deleteMultipleNotes, restoreAllFromBin, deleteAllInBin } from '@/utils/db'; // Make sure this path is correct
-import { RichEditor } from 'react-native-pell-rich-editor';
-import { ThemedText } from '@/components/ThemedText';
-import { useNavigation } from 'expo-router';
+import React, { useState, useEffect, useCallback, useContext } from 'react';
+import { View, FlatList, StyleSheet, ActivityIndicator, Alert, Dimensions, BackHandler } from 'react-native';
+import { loadBinNotes, restoreMultipleFromBin, deleteMultipleNotes, restoreAllFromBin, deleteAllInBin, getNoteTagsById } from '@/utils/db';
+import { useNavigation, useRouter } from 'expo-router';
 import Context from '@/context/createContext';
+import { cancelPushNotification } from '@/components/Notification';
+import { ThemedText } from '@/components/ThemedText';
+import BinNoteItem from '@/components/bin/BinNoteItem';
+import BinHeader from '@/components/bin/BinHeader';
+
 const { width: screenWidth } = Dimensions.get('window');
 const NoteWidth = screenWidth / 2 - 20;
-const RICH_EDITOR_MAX_HEIGHT = 200;
+
+interface Note {
+  id: number;
+  title: string;
+  content: string;
+  isInBin: number;
+  reminder?: number | null;
+  isLocked?: number;
+  tags?: Array<{name: string, color: string}>; // Update tags type 
+}
 
 export default function Bin() {
   const context = useContext(Context);
-  const {fetchNotes} = context;
-  const [deletedNotes, setDeletedNotes] = useState<any[]>([]);
+  const { fetchNotes } = context;
+  const [deletedNotes, setDeletedNotes] = useState<Note[]>([]);
   const [selectedNotes, setSelectedNotes] = useState<Set<number>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
-  const richText = useRef<RichEditor>(null);
   const navigation = useNavigation();
+  const router = useRouter();
 
   const renderHeaderRight = useCallback(() => (
-    selectedNotes.size > 0 ? (
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handleRestore} style={styles.actionButton}>
-          <Text style={styles.actionButtonText}>Restore</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={handleDelete} style={styles.actionButton}>
-          <Text style={styles.actionButtonText}>Delete</Text>
-        </TouchableOpacity>
-        
-      </View>
-    ) : (
-      <View style={styles.header}>
-        <TouchableOpacity onPress={restoreAllFromBin} style={styles.actionButton}>
-          <Text style={styles.actionButtonText}>Restore</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={deleteAllInBin} style={styles.actionButton}>
-          <Text style={styles.actionButtonText}>Empty Bin</Text>
-        </TouchableOpacity>
-
-      </View>
-    )
-  ), [selectedNotes]);
+    <BinHeader
+      selectedCount={selectedNotes.size}
+      onRestore={handleRestore}
+      onDelete={handleDelete}
+      onRestoreAll={handleRestoreAll}
+      onEmptyBin={emptyBin}
+    />
+  ), [selectedNotes.size]);
 
   useEffect(() => {
     navigation.setOptions({ headerRight: renderHeaderRight });
@@ -55,7 +53,16 @@ export default function Bin() {
     setIsLoading(true);
     try {
       const fetchedNotes = await loadBinNotes();
-      setDeletedNotes(fetchedNotes);
+      
+      // Load tags for each note
+      const notesWithTags = await Promise.all(
+        fetchedNotes.map(async (note) => {
+          const tags = await getNoteTagsById(note.id);
+          return {...note, tags};
+        })
+      );
+      
+      setDeletedNotes(notesWithTags);
     } catch (error) {
       console.error('Error loading deleted notes:', error);
       Alert.alert('Error', 'Could not fetch deleted notes.');
@@ -77,11 +84,7 @@ export default function Bin() {
   };
 
   const handleLongPress = useCallback((id: number) => {
-    setSelectedNotes(prevSelected => {
-      const newSelected = new Set(prevSelected);
-      newSelected.add(id);
-      return newSelected;
-    });
+    setSelectedNotes(prevSelected => new Set(prevSelected).add(id));
   }, []);
 
   const handleRestore = async () => {
@@ -92,8 +95,9 @@ export default function Bin() {
       await restoreMultipleFromBin(ids);
       setDeletedNotes(prevNotes => prevNotes.filter(note => !selectedNotes.has(note.id)));
       setSelectedNotes(new Set());
-      loadDeletedNotes()
-      fetchNotes()
+      await loadDeletedNotes(); // Reload bin notes
+      // Just fetch notes once instead of for each note
+      await fetchNotes(); // Refresh home screen notes
     } catch (error) {
       console.error('Error restoring notes:', error);
     } finally {
@@ -106,11 +110,18 @@ export default function Bin() {
     setIsLoading(true);
     try {
       const ids = Array.from(selectedNotes);
-      await deleteMultipleNotes(ids);
+      const notificationIds = await deleteMultipleNotes(ids);
+      
+      // Cancel any associated notifications
+      if (Array.isArray(notificationIds)) {
+        for (const notificationId of notificationIds) {
+          await cancelPushNotification(notificationId);
+        }
+      }
+      
       setDeletedNotes(prevNotes => prevNotes.filter(note => !selectedNotes.has(note.id)));
       setSelectedNotes(new Set());
-      loadDeletedNotes()
-      fetchNotes()
+      // No need to refresh home screen since these notes are already in bin
     } catch (error) {
       console.error('Error deleting notes:', error);
     } finally {
@@ -118,28 +129,49 @@ export default function Bin() {
     }
   };
 
-  const renderNote = ({ item }: { item: any }) => (
-    <TouchableOpacity
-      key={item.id}
-      style={[
-        styles.noteContainer,
-        selectedNotes.has(item.id) && styles.selectedNote
-      ]}
+  const handleRestoreAll = async () => {
+    setIsLoading(true);
+    try {
+      await restoreAllFromBin();
+      await loadDeletedNotes();
+      await fetchNotes();
+    } catch (error) {
+      console.error('Error restoring all notes:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const emptyBin = async () => {
+    setIsLoading(true);
+    try {
+      await deleteAllInBin();
+      await loadDeletedNotes();
+    } catch (error) {
+      console.error('Error emptying bin:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Add back button handler
+  useEffect(() => {
+    const handleBackPress = () => {
+      router.navigate('/');
+      return true; // Prevent default behavior
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
+    return () => backHandler.remove();
+  }, [router]);
+
+  const renderNote = ({ item }: { item: Note }) => (
+    <BinNoteItem
+      item={item}
+      isSelected={selectedNotes.has(item.id)}
       onPress={() => handleSelectNote(item.id)}
       onLongPress={() => handleLongPress(item.id)}
-    >
-      {item.title && (
-        <ThemedText style={styles.noteTitle}>{item.title}</ThemedText>
-      )}
-      <RichEditor
-        ref={richText}
-        style={styles.editor}
-        initialContentHTML={item.content}
-        editorStyle={{ backgroundColor: '#000', color: '#ccc' }}
-        disabled={true}
-        forceDarkOn
-      />
-    </TouchableOpacity>
+    />
   );
 
   return (
@@ -158,7 +190,7 @@ export default function Bin() {
             numColumns={2}
             columnWrapperStyle={styles.columnsContainer}
             refreshing={isLoading}
-            onRefresh={loadBinNotes}
+            onRefresh={loadDeletedNotes}
           />
         )
       )}
@@ -167,7 +199,11 @@ export default function Bin() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 5, backgroundColor: '#000' },
+  container: { 
+    flex: 1, 
+    padding: 5, 
+    backgroundColor: '#000' 
+  },
   title: {
     fontSize: 30,
     fontFamily: 'ndot',
@@ -176,32 +212,14 @@ const styles = StyleSheet.create({
     marginLeft: 40,
     color:'#fff'
   },
-  columnsContainer: { justifyContent: 'space-between', marginHorizontal: 10 },
-  noteContainer: {
-    padding: 10,
-    marginVertical: 5,
-    borderColor: '#777',
-    borderWidth: 0.4,
-    borderRadius: 10,
-    width: NoteWidth,
-    maxHeight: 250,
-    overflow: 'hidden',
-    backgroundColor: '#000',
+  columnsContainer: { 
+    justifyContent: 'space-between', 
+    marginHorizontal: 10 
   },
-  noteTitle: { fontSize: 18, color: '#fff' },
-  editor: { marginVertical: 2, maxHeight: RICH_EDITOR_MAX_HEIGHT, minHeight: 100, overflow: 'hidden' },
-  noNotesText: { textAlign: 'center', fontSize: 18, color: '#aaa', marginTop: 20 },
-  selectedNote: { borderWidth: 1, borderColor: '#fff' },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-
+  noNotesText: { 
+    textAlign: 'center', 
+    fontSize: 18, 
+    color: '#aaa', 
+    marginTop: 20 
   },
-  actionButton: {
-    backgroundColor: '#000',
-    padding: 10,
-    borderRadius: 6,
-    marginHorizontal: 5,
-  },
-  actionButtonText: { color: '#fff',fontFamily:'RobotoMono' },
 });
